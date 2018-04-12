@@ -1,6 +1,6 @@
 resource "aws_alb" "ecs-load-balancer" {
-    name                = "ecs-load-balancer"
-    security_groups     = ["${aws_security_group.web_public_sg.id}"]
+    name                = "ecs-load-balancer"    
+    security_groups     = ["${aws_security_group.web_lb_sg.id}"]
     subnets             = ["${aws_subnet.webPublicSubnet1.id}", "${aws_subnet.webPublicSubnet2.id}"]
 
     tags {
@@ -13,6 +13,7 @@ resource "aws_alb_target_group" "ecs-target-group" {
     port                = "80"
     protocol            = "HTTP"
     vpc_id              = "${aws_vpc.webVPC.id}"
+    depends_on = [ "aws_alb.ecs-load-balancer" ]
 
     health_check {
         healthy_threshold   = "5"
