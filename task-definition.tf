@@ -5,7 +5,7 @@ data "aws_ecs_task_definition" "nginx" {
 }
 
 resource "aws_ecs_task_definition" "nginx" {
-    family                = "trial_day_demo"
+    family                = "iac_demo"
     cpu                      = "256"
     memory                   = "512"
     container_definitions = <<DEFINITION
