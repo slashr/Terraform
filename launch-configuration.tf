@@ -1,7 +1,7 @@
 variable ecs_key_pair_name {}
 variable ec2_ami {}
 
-
+//Creates a Launch Configuration. Specified are the AMI ID, instance type, keypair name, instance profile, ebs details, security groups, user_data
 resource "aws_launch_configuration" "launch-configuration" {
     name                        = "launch-configuration"
     image_id                    = "${var.ec2_ami}"
