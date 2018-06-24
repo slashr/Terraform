@@ -5,146 +5,6 @@ provider "aws" {
   region     = "us-east-1"
 }
 
-//Configuration details for the autoscaling group
-resource "aws_autoscaling_group" "autoscaling-group" {
-    name                        = "autoscaling-group"
-    max_size                    = "${2}"
-    min_size                    = "${1}"
-    desired_capacity            = "${2}"
-    vpc_zone_identifier         = ["${aws_subnet.webPublicSubnet1.id}", "${aws_subnet.webPublicSubnet2.id}"]
-    launch_configuration        = "${aws_launch_configuration.launch-configuration.name}"
-    health_check_type           = "ELB"
-}
-
-
-//Name of the ECS cluster
-resource "aws_ecs_cluster" "web-ecs-cluster" {
-    name = "iac_demo"
-}
-
-//Creates a application load balancer
-resource "aws_alb" "load-balancer" {
-    name                = "load-balancer"    
-    security_groups     = ["${aws_security_group.loadbalancer-sg.id}"]
-    subnets             = ["${aws_subnet.webPublicSubnet1.id}", "${aws_subnet.webPublicSubnet2.id}"]
-
-    tags {
-      Name = "load-balancer"
-    }
-}
-
-//Creates a target group for the ALB
-resource "aws_alb_target_group" "target-group" {
-    name                = "target-group"
-    port                = "80"
-    protocol            = "HTTP"
-    vpc_id              = "${aws_vpc.webVPC.id}"
-    depends_on = [ "aws_alb.load-balancer" ]
-
-    health_check {
-        healthy_threshold   = "5"
-        unhealthy_threshold = "2"
-        interval            = "30"
-        matcher             = "200"
-        path                = "/"
-        port                = "traffic-port"
-        protocol            = "HTTP"
-        timeout             = "5"
-    }
-
-    tags {
-      Name = "target-group"
-    }
-}
-
-//Opens ports on the ALB
-resource "aws_alb_listener" "alb-listener" {
-    load_balancer_arn = "${aws_alb.load-balancer.arn}"
-    port              = "80"
-    protocol          = "HTTP"
-
-    default_action {
-        target_group_arn = "${aws_alb_target_group.target-group.arn}"
-        type             = "forward"
-    }
-}
-
-//Creates a security group for the ALB
-resource "aws_security_group" "loadbalancer-sg" {
-    name = "loadbalancer-sg"
-    description = "Load Balancer security group"
-    vpc_id = "${aws_vpc.webVPC.id}"
-
-
-   ingress {
-      from_port = "80"
-      to_port = "80"
-      protocol = "tcp"
-      cidr_blocks = [
-         "0.0.0.0/0"]
-   }
-
-    egress {
-        # allow all traffic to private SN
-        from_port = "0"
-        to_port = "0"
-        protocol = "-1"
-        cidr_blocks = [
-            "0.0.0.0/0"]
-    }
-}
-
-
-//Creates a Launch Configuration. Specified are the AMI ID, instance type, keypair name, instance profile, ebs details, security groups, user_data
-resource "aws_launch_configuration" "launch-configuration" {
-    name                        = "launch-configuration"
-    image_id                    = "${var.ec2_ami}"
-    instance_type               = "t2.micro"
-    iam_instance_profile        = "${aws_iam_instance_profile.instance-profile.id}"
-    key_name                    = "Test1"
-    root_block_device {
-      volume_type = "standard"
-      volume_size = 10
-      delete_on_termination = true
-    }
-
-    lifecycle {
-      create_before_destroy = true
-    }
-
-    security_groups             = ["${aws_security_group.web_public_sg.id}"]
-    associate_public_ip_address = "true"
-    user_data                   = <<EOF
-                                  #!/bin/bash
-                                  echo ECS_CLUSTER="InfrastrucureAsCode" >> /etc/ecs/ecs.config
-                                  EOF
-}
-
-//Creates a role for the ECS service to use. ECS uses this role to add containers to the load balancer
-resource "aws_iam_role" "service-role" {
-    name                = "service-role"
-    path                = "/"
-    assume_role_policy  = "${data.aws_iam_policy_document.service-policy.json}"
-}
-
-//Using the factory role AmazonEC2ContainerServiceRole
-resource "aws_iam_role_policy_attachment" "service-role-attachment" {
-    role       = "${aws_iam_role.service-role.name}"
-    policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceRole"
-}
-
-//Generates a JSON file of the role
-data "aws_iam_policy_document" "service-policy" {
-    statement {
-        actions = ["sts:AssumeRole"]
-
-        principals {
-            type        = "Service"
-            identifiers = ["ecs.amazonaws.com"]
-        }
-    }
-}
-
 //Create a VPC
 resource "aws_vpc" "webVPC" {
   cidr_block = "10.0.0.0/16"
@@ -239,6 +99,161 @@ resource "aws_security_group" "web_public_sg" {
     }
 }
 
+//Configuration details for the autoscaling group
+resource "aws_autoscaling_group" "autoscaling-group" {
+    name                        = "autoscaling-group"
+    max_size                    = "${2}"
+    min_size                    = "${1}"
+    desired_capacity            = "${2}"
+    vpc_zone_identifier         = ["${aws_subnet.webPublicSubnet1.id}", "${aws_subnet.webPublicSubnet2.id}"]
+    depends_on                  = [ "aws_launch_configuration.launch-configuration" ]
+    launch_configuration        = "${aws_launch_configuration.launch-configuration.name}"
+    health_check_type           = "ELB"
+}
+
+
+//Creates a application load balancer
+resource "aws_alb" "load-balancer" {
+    name                = "load-balancer"    
+    security_groups     = ["${aws_security_group.loadbalancer-sg.id}"]
+    subnets             = ["${aws_subnet.webPublicSubnet1.id}", "${aws_subnet.webPublicSubnet2.id}"]
+
+    tags {
+      Name = "load-balancer"
+    }
+}
+
+//Creates a target group for the ALB
+resource "aws_alb_target_group" "target-group" {
+    name                = "target-group"
+    port                = "80"
+    protocol            = "HTTP"
+    vpc_id              = "${aws_vpc.webVPC.id}"
+    depends_on          = [ "aws_alb.load-balancer" ]
+
+    health_check {
+        healthy_threshold   = "5"
+        unhealthy_threshold = "2"
+        interval            = "30"
+        matcher             = "200"
+        path                = "/"
+        port                = "traffic-port"
+        protocol            = "HTTP"
+        timeout             = "5"
+    }
+
+    tags {
+      Name = "target-group"
+    }
+}
+
+//Opens ports on the ALB
+resource "aws_alb_listener" "alb-listener" {
+    load_balancer_arn = "${aws_alb.load-balancer.arn}"
+    port              = "80"
+    protocol          = "HTTP"
+
+    default_action {
+        target_group_arn = "${aws_alb_target_group.target-group.arn}"
+        type             = "forward"
+    }
+}
+
+//Creates a security group for the ALB
+resource "aws_security_group" "loadbalancer-sg" {
+    name = "loadbalancer-sg"
+    description = "Load Balancer security group"
+    vpc_id = "${aws_vpc.webVPC.id}"
+
+
+   ingress {
+      from_port = "80"
+      to_port = "80"
+      protocol = "tcp"
+      cidr_blocks = [
+         "0.0.0.0/0"]
+   }
+
+    egress {
+        # allow all traffic to private SN
+        from_port = "0"
+        to_port = "0"
+        protocol = "-1"
+        cidr_blocks = [
+            "0.0.0.0/0"]
+    }
+}
+
+
+//Creates a Launch Configuration. Specified are the AMI ID, instance type, keypair name, instance profile, ebs details, security groups, user_data
+resource "aws_launch_configuration" "launch-configuration" {
+    name                        = "launch-configuration"
+    image_id                    = "${var.ec2_ami}"
+    instance_type               = "t2.micro"
+    iam_instance_profile        = "${aws_iam_instance_profile.instance-profile.id}"
+    key_name                    = "Test1"
+    root_block_device {
+      volume_type = "standard"
+      volume_size = 10
+      delete_on_termination = true
+    }
+
+    lifecycle {
+      create_before_destroy = true
+    }
+
+    security_groups             = ["${aws_security_group.web_public_sg.id}"]
+    associate_public_ip_address = "true"
+    user_data                   = <<EOF
+                                  #!/bin/bash
+                                  echo ECS_CLUSTER="InfrastrucureAsCode" >> /etc/ecs/ecs.config
+                                  EOF
+}
+
+//Name of the ECS cluster
+resource "aws_ecs_cluster" "web-ecs-cluster" {
+    name = "iac_demo"
+}
+
+//Creates a role for the ECS service to use. ECS uses this role to add containers to the load balancer
+resource "aws_iam_role" "service-role" {
+    name                = "service-role"
+    path                = "/"
+    assume_role_policy  = "${data.aws_iam_policy_document.service-policy.json}"
+}
+
+//Using the factory role AmazonEC2ContainerServiceRole
+resource "aws_iam_role_policy_attachment" "service-role-attachment" {
+    role       = "${aws_iam_role.service-role.name}"
+    policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceRole"
+}
+
+//Generates a JSON file of the role
+data "aws_iam_policy_document" "service-policy" {
+    statement {
+        actions = ["sts:AssumeRole"]
+
+        principals {
+            type        = "Service"
+            identifiers = ["ecs.amazonaws.com"]
+        }
+    }
+}
+
+//Task Definition: Essentially specifying the task family, the container definition, container configuration
+data "aws_ecs_task_definition" "nginx" {
+  depends_on = [ "aws_ecs_task_definition.nginx" ]
+  task_definition = "${aws_ecs_task_definition.nginx.family}"
+}
+
+resource "aws_ecs_task_definition" "nginx" {
+    family                = "iac_demo"
+    cpu                      = "256"
+    memory                   = "512"
+    container_definitions = "${file("container-definitions/service.json")}"
+}
+
+
 //Creates an IAM Role
 resource "aws_iam_role" "instance-role" {
     name                = "instance-role"
@@ -272,19 +287,6 @@ resource "aws_iam_instance_profile" "instance-profile" {
     provisioner "local-exec" {
       command = "sleep 10"
     }
-}
-
-//Task Definition: Essentially specifying the task family, the container definition, container configuration
-data "aws_ecs_task_definition" "nginx" {
-  depends_on = [ "aws_ecs_task_definition.nginx" ]
-  task_definition = "${aws_ecs_task_definition.nginx.family}"
-}
-
-resource "aws_ecs_task_definition" "nginx" {
-    family                = "iac_demo"
-    cpu                      = "256"
-    memory                   = "512"
-    container_definitions = "${file("container-definitions/service.json")}"
 }
 
 
